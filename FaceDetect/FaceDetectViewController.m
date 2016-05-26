@@ -7,7 +7,7 @@
 //
 
 #import "FaceDetectViewController.h"
-
+#import "SecViewController.h"
 #define navBarHeight    44.
 #define markViewTag    100
 
@@ -51,12 +51,14 @@
     CGFloat scale = 1.;
     
     CGSize imgSize = imageView.image.size;
-    
+    NSLog(@"----%@",imageView);
     CGRect vFrame = self.view.frame;
     vFrame.size.height -= navBarHeight;
     vFrame.origin.y = navBarHeight;
     
     CGRect sFrame = viewShow.frame;
+    NSLog(@"%@",viewShow);
+    //viewShow.backgroundColor =[UIColor blackColor];
 
     if (imgSize.width/CGRectGetWidth(vFrame) > imgSize.height/CGRectGetHeight(vFrame)) {
         sFrame.size.width = CGRectGetWidth(vFrame);
@@ -82,10 +84,15 @@
 
 -(void)dealImageWhenItChanged
 {
+    self.imageViewCrop.hidden = YES;
+    self.imageView.hidden = NO;
+    
     [self removeAllMarkViews];
     [self setShowViewFrame];
     
     [self showProgressIndicator:@"Detecting.."];
+    rectFaceDetect = CGRectZero;
+   
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
          [self faceDetect:imageView.image];
     });
@@ -114,8 +121,55 @@
     [actionSheet showInView:self.view];
     [actionSheet release];
 }
-- (IBAction)cropImage:(id)sender {
 
+//将图片切成正方形，按照人脸来决定剪切的范围,多个人脸，仅按照一个人脸来决定
+- (IBAction)cropImage:(id)sender {
+    if (CGRectGetHeight(rectFaceDetect)==0) {
+        UIAlertView *alert = [[UIAlertView alloc]initWithTitle:@"Failed"
+                                                       message:@"No image or the face detecting failed"
+                                                      delegate:self
+                                             cancelButtonTitle:@"Ok"
+                                             otherButtonTitles:nil, nil];
+        [alert show];
+        [alert release];
+    }
+    else
+    {
+        [self showProgressIndicator:@"Croping"];
+        
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            CGRect crpRect = [self getCropRectBgFaceDetect:rectFaceDetect];
+            crpRect.size.height = rectFaceDetect.origin.y-crpRect.origin.y+rectFaceDetect.size.height;
+           //crpRect = rectFaceDetect;
+            crpRect.size.height =crpRect.size.height -10;
+            NSLog(@"%f,%f,%f,%f",crpRect.origin.x,crpRect.origin.y,crpRect.size.width,crpRect.size.height);
+           
+            UIImage *newImg = [self croppedPhotoWithCropRect:self.imageView.image toFrame:crpRect];
+            UIImageView *view1 =[[UIImageView alloc]initWithFrame:CGRectMake(0, 0, 20, 20)];
+            view1.image=newImg;
+            [self.view addSubview:view1];
+            SecViewController *sc =[[SecViewController alloc]init];
+            sc.image1 =newImg;
+            [self presentViewController:sc animated:NO completion:^{
+                
+            }];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                
+                [self hideProgressIndicator];
+                
+                self.imageViewCrop.image = newImg;
+                CGRect sFrame = self.viewShow.frame;
+                sFrame.size = newImg.size;
+                sFrame.origin.x = (CGRectGetWidth(self.view.bounds)-newImg.size.width)/2.0;
+                sFrame.origin.y = navBarHeight + (CGRectGetHeight(self.view.bounds)-navBarHeight-newImg.size.height)/2.0;
+                self.viewShow.frame = sFrame;
+                
+                self.imageViewCrop.hidden = NO;
+                self.imageView.hidden = YES;
+                [self removeAllMarkViews];
+            });
+        });
+    }
 }
 
 
@@ -136,12 +190,14 @@
             picker.sourceType = sourceType;
             picker.delegate = self;
             picker.allowsEditing = NO;
-            [self presentModalViewController:picker animated:YES];
+            [self presentViewController:picker animated:YES completion:^{
+                
+            }];
             [picker release];
         }
     } 
     else {
-        NSString *path = [[NSBundle mainBundle] pathForResource:@"ian1" ofType:@"png"];
+        NSString *path = [[NSBundle mainBundle] pathForResource:@"img3" ofType:@"png"];
         imageView.image = [UIImage imageWithContentsOfFile:path];
         
          [self dealImageWhenItChanged];//人脸识别去
@@ -157,9 +213,7 @@
     
     //Create a CIImage version of your photo
     CIImage* image = [CIImage imageWithCGImage:aImage.CGImage];
-    
-   
-    
+
     //create a face detector
     //此处是CIDetectorAccuracyHigh，若用于real-time的人脸检测，则用CIDetectorAccuracyLow，更快
     NSDictionary  *opts = [NSDictionary dictionaryWithObject:CIDetectorAccuracyHigh
@@ -173,7 +227,6 @@
     
     if ([features count]==0) {
         NSLog(@">>>>> 人脸监测【失败】啦 ～！！！");
-        return;
         
     }
     NSLog(@">>>>> 人脸监测【成功】～！！！>>>>>> ");
@@ -183,30 +236,36 @@
     
 }
 
+//人脸标识
 -(void)markAfterFaceDetect:(NSArray *)features
 {
     [self hideProgressIndicator];
     [self setShowViewFrame];
+    if ([features count]==0) {
+        UIAlertView *alert = [[UIAlertView alloc]initWithTitle:@"Failed"
+                                                       message:@"The face detecting failed"
+                                                      delegate:self
+                                             cancelButtonTitle:@"Ok"
+                                             otherButtonTitles:nil, nil];
+        [alert show];
+        [alert release];
+        return;
+    }
 
     for (CIFaceFeature *f in features)
     {
+        //CGContextRef context = UIGraphicsGetCurrentContext();
         //旋转180，仅y
+        
+
+       
         CGRect aRect = f.bounds;
-        aRect.origin.y = self.viewShow.bounds.size.height - aRect.size.height - aRect.origin.y;//self.bounds.size
-        
-        UIView *vv = [[UIView alloc]initWithFrame:aRect];
-        vv.tag = markViewTag;
-        [vv setTransform:CGAffineTransformMakeScale(1, -1)];
-        vv.backgroundColor = [UIColor redColor];
-        vv.alpha = 0.6;
-        [self.viewShow addSubview:vv];
-        [vv release];
-        
         
         NSLog(@"%@",NSStringFromCGRect(f.bounds));
+       
         if (f.hasLeftEyePosition){
             printf("Left eye %g %g\n", f.leftEyePosition.x, f.leftEyePosition.y);
-            
+            aRect.origin.x =f.leftEyePosition.x;
             UIView *vv = [[UIView alloc]initWithFrame:CGRectMake(0, 0, 10, 10)];
              vv.tag = markViewTag;
             //旋转180，仅y
@@ -223,7 +282,9 @@
         if (f.hasRightEyePosition)
         {
             printf("Right eye %g %g\n", f.rightEyePosition.x, f.rightEyePosition.y);
-            
+            aRect.size.width = f.rightEyePosition.x-aRect.origin.x;
+            aRect.origin.x =aRect.origin.x- aRect.size.width/4;
+            aRect.size.width  =aRect.size.width* 1.5;
             UIView *vv = [[UIView alloc]initWithFrame:CGRectMake(0, 0, 10, 10)];
              vv.tag = markViewTag;
             //旋转180，仅y
@@ -239,7 +300,7 @@
         }
         if (f.hasMouthPosition)
         {
-            printf("Mouth %g %g\n", f.mouthPosition.x, f.mouthPosition.y);
+            printf("Mouth %g %g\n", f.mouthPosition.x, 568-f.mouthPosition.y);
             
             UIView *vv = [[UIView alloc]initWithFrame:CGRectMake(0, 0, 10, 10)];
              vv.tag = markViewTag;
@@ -255,10 +316,101 @@
             [vv release];
             
         }
+        
+        NSLog(@"%f,%f,%f,%f",aRect.origin.x,aRect.origin.y,aRect.size.width,aRect.size.height);
+        
+        aRect.origin.y = self.viewShow.bounds.size.height - aRect.size.height - aRect.origin.y;//self.bounds.size
+        UIView *vv = [[UIView alloc]initWithFrame:aRect];
+        vv.tag = markViewTag;
+        [vv setTransform:CGAffineTransformMakeScale(1, -1)];
+        vv.backgroundColor = [UIColor redColor];
+        vv.alpha = 0.6;
+        [self.viewShow addSubview:vv];
+        [vv release];
+        
+        rectFaceDetect = aRect;
     }
 
 
 }
+-(void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event
+{
+    UITouch *touch =[touches anyObject];
+    CGPoint point =[touch locationInView:self.view];
+    NSLog(@"点击了%f,%f",point.x,point.y);
+    
+}
+#pragma mark - 图片剪切
+- (UIImage *) croppedPhotoWithCropRect:(UIImage *)aImage toFrame:(CGRect)aFrame
+{
+    //框的坐标
+    CGRect cropRect = aFrame;
+    
+    //根据比例得出选中框实际圈中的范围
+    //    CGSize nowImageSize = self.cropperImageView.frame.size;
+    //    CGSize realImageSize = self.cropperImageView.image.size;
+    //    CGFloat nowScaleW = realImageSize.width/nowImageSize.width;
+    //    CGFloat nowScaleH = realImageSize.height/nowImageSize.height;
+    //    cropRect.origin.x *= nowScaleW;
+    //    cropRect.origin.y *= nowScaleH;
+    //    cropRect.size.width *= nowScaleW;
+    //    cropRect.size.height *= nowScaleH;
+    
+    //根据范围剪切图片得到新图片
+    CGImageRef imageRef = CGImageCreateWithImageInRect([aImage CGImage], cropRect);
+    UIImage *result = [UIImage imageWithCGImage:imageRef];
+    CGImageRelease(imageRef);
+    
+    return result;
+}
+-(CGRect)getCropRectBgFaceDetect:(CGRect)aFaceDetRect
+{
+    CGRect faceDetRect = aFaceDetRect;
+    CGRect aImgRect = self.viewShow.frame;
+    CGRect aCrpRect = [self getCropRectWhenFaceDetectFailed];
+    
+    //找到人脸中心
+    CGPoint centerPoint =CGPointMake(0, 0);
+    centerPoint.x = faceDetRect.origin.x + faceDetRect.size.width/2.0;
+    centerPoint.y = faceDetRect.origin.y + faceDetRect.size.height/2.0;
+    NSLog(@"%f,%f",centerPoint.x,centerPoint.y);
+    //将aCrpRect中心点移到人脸中心
+    aCrpRect.origin.x = centerPoint.x - aCrpRect.size.width/2.0;
+    aCrpRect.origin.y = centerPoint.y - aCrpRect.size.height/2.0;
+    
+    //判断aCrpRect超出情况
+    if (aCrpRect.origin.x < 0) {
+        aCrpRect.origin.x =0;
+    }
+    if (aCrpRect.origin.x+aCrpRect.size.width > aImgRect.origin.x + aImgRect.size.width) {
+        aCrpRect.origin.x = aImgRect.origin.x + aImgRect.size.width - aCrpRect.size.width;
+    }
+    if (aCrpRect.origin.y < 0) {
+        aCrpRect.origin.y =0;
+    }
+    if (aCrpRect.origin.y+aCrpRect.size.height > aImgRect.origin.y + aImgRect.size.height) {
+        aCrpRect.origin.y = aImgRect.origin.y + aImgRect.size.height - aCrpRect.size.height;
+    }
+    return aCrpRect;
+}
+
+-(CGRect)getCropRectWhenFaceDetectFailed
+{
+    CGRect imgVRect = self.viewShow.frame;
+    CGRect crpRect = self.viewShow.frame;
+    if (CGRectGetHeight(crpRect)>CGRectGetWidth(crpRect)) {
+        crpRect.size.height = CGRectGetWidth(crpRect);
+    }
+    else
+    {
+        crpRect.size.width = CGRectGetHeight(crpRect);
+    }
+    crpRect.origin.x = (CGRectGetWidth(imgVRect)-CGRectGetWidth(crpRect))/2.0;
+    crpRect.origin.y = (CGRectGetHeight(imgVRect)-CGRectGetHeight(crpRect))/2.0;
+    
+    return crpRect;
+}
+
 
 #pragma mark - ScaleImageSize
 //将图片进行缩放重新生成
@@ -401,18 +553,22 @@
 }
 
 - (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker {
-    [picker dismissModalViewControllerAnimated:YES];
+    [picker dismissViewControllerAnimated:YES completion:^{
+        
+    }];
 }
 
 
 - (void)dealloc {
     [imageView release];
     [viewShow release];
+    [_imageViewCrop release];
     [super dealloc];
 }
 - (void)viewDidUnload {
     [self setImageView:nil];
     [self setViewShow:nil];
+    [self setImageViewCrop:nil];
     [super viewDidUnload];
 }
 @end

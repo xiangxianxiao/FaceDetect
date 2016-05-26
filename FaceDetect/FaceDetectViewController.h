@@ -9,6 +9,7 @@
 #import <UIKit/UIKit.h>
 
 #import <UIKit/UIKit.h>
+#import <QuartzCore/QuartzCore.h>
 #import <AudioToolbox/AudioToolbox.h>
 @interface UIProgressIndicator : UIActivityIndicatorView {
 }
@@ -56,7 +57,9 @@
     SystemSoundID alertSoundID;
     UIImageView* imageView;
     UIImageView *newImageView ;//cropimageview
+    CGRect    rectFaceDetect;
 }
+@property (retain, nonatomic) IBOutlet UIImageView *imageViewCrop;
 @property (retain, nonatomic) IBOutlet UIView *viewShow;
 @property (retain, nonatomic) IBOutlet UIImageView *imageView;
 @end
